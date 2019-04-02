@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "Show - Highlighter for Google Slides",
+    "description": "Extension name."
+  },
+  "extensionShortName": {
+    "message": "Show",
+    "description": "Extension short-name."
+  },
+  "extensionDescription": {
+    "message": "Chrome Extension for showing highlights in Google Slides",
+    "description": "Extension description."
+  }
+}
