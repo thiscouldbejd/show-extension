@@ -60,6 +60,7 @@ const DRAWING = {
     "lines",
     "freehand"
   ],
+  threshold : 2,
   width : 16,
   transparency : "50",
 };
@@ -74,14 +75,14 @@ const BUTTONS = {
   },
   screenshot : {
     name : "Save",
-    desc : "Capture and Download Screenshot",
+    desc : "Capture and Download Screenshot (SHIFT+S)",
     icon : ICONS.save
   },
   clear : {
     name : "Clear",
-    desc : "Erase Highlights from Slide",
+    desc : "Erase Highlights from Slide (SHIFT+C)",
   },
-}
+};
 /* === Button Constants === */
 
 /* === Get Constants === */
@@ -98,13 +99,15 @@ const GET = {
 
 	slide : () => GET.element(SELECTORS.slide),
   
+  svg_container : () => GET.element(SELECTORS.svg),
+  
   svg : parent => {
     var _return = (parent || document).getElementsByClassName(SELECTORS.svg);
     if (_return.length > 0) {
       _return = _return[0].getElementsByTagName(ELEMENTS.svg);
       if (_return.length > 0) return _return[0];
     }
-  }  
+  }
 	
 };
 /* === Get Constants === */
@@ -126,7 +129,13 @@ const DRAW = {
     }
   },
   move: e => {
-    if (DRAW.current.active) {
+    if (DRAW.current.active &&
+        (
+      		(e.movementX > DRAWING.threshold || e.movementY > DRAWING.threshold) ||
+      		(Math.abs(DRAW.current.x - e.clientX) > DRAWING.threshold ||
+           Math.abs(DRAW.current.y - e.clientY) > DRAWING.threshold)
+    		)
+       ) {
       if (DRAW.current.shape) DRAW.current.shape.remove();
       DRAW.current.shape = DRAW.draw(DRAW.current.x, DRAW.current.y, e.clientX, e.clientY);
     }
@@ -250,7 +259,7 @@ var CREATE = {
 var ACTIONS = {
   
   clear : () => {
-    var _targets = GET.svg().getElementsByClassName(SELECTORS.added);
+    var _targets = GET.svg().getElementsByClassName(SELECTORS.add);
     while (_targets.length > 0) _targets[0].remove();
   },
 
@@ -266,7 +275,7 @@ var ACTIONS = {
     }
     
     /* === Reset Highlight Button Background === */
-    GET.element(SELECTORS.icon, BUTTONS.highlight.button).style.background = 
+    GET.element(SELECTORS.icon, BUTTONS.highlight.button).style.background =
       CREATE.background(BUTTONS.highlight.icon || ICONS[_name], ICONS.colours.default);
     
     /* === Reset Highlight Button Colour === */
@@ -313,6 +322,8 @@ var ACTIONS = {
             y1 -= _t;
             y2 -= _t;
 
+            var _strokeW = DRAWING.width;
+            
             if (_target.hasAttribute("viewBox")) {
 
               var _sizes = _target.getAttribute("viewBox").split(" ");
@@ -324,6 +335,7 @@ var ACTIONS = {
                 x2 = (x2 / _w) * _width;
                 y1 = (y1 / _h) * _height;
                 y2 = (y2 / _h) * _height;
+                _strokeW = (_strokeW / _w) * _width;
               }
 
             }
@@ -334,9 +346,9 @@ var ACTIONS = {
                 roughness: 0.8,
                 bow: 0.8,
                 stroke: `${BUTTONS.highlight.colour || DRAWING.colours[0]}${DRAWING.transparency}`,
-                strokeWidth: DRAWING.width
+                strokeWidth: _strokeW
               });
-            line.classList.add(SELECTORS.added);
+            line.classList.add(SELECTORS.add);
             return _target.appendChild(line);
           }
 
@@ -353,7 +365,7 @@ var ACTIONS = {
               _handle = mutants => mutants.forEach(m => {
                 if (m.type == "childList" && m.addedNodes) {
                   m.addedNodes.forEach(node => {
-                    if (node.nodeName == ELEMENTS.div.toUpperCase() && 
+                    if (node.nodeName == ELEMENTS.div.toUpperCase() &&
                         node.classList.contains(SELECTORS.page)) ACTIONS.reset();
                   });
                 }
@@ -378,10 +390,16 @@ var ACTIONS = {
   screenshot : () => {
     try {
       var _target = GET.svg(),
-        _title = GET.element(SELECTORS.a11y);
-
-      if (_target) saveSvgAsPng(_target, _title && _title.hasAttribute("aria-label") ?
-        _title.getAttribute("aria-label") : "screenshot.png");
+        _title = GET.element(SELECTORS.a11y),
+        _container = GET.svg_container(),
+        _scale = _container.clientWidth / _target.viewBox.baseVal.width;
+      
+      console.log(`SVG: ${_target.viewBox.baseVal.width} x ${_target.viewBox.baseVal.height}`);
+      console.log(`CONTAINER: ${_container.clientWidth} x ${_container.clientHeight}`);
+      console.log(`SCALE: ${_scale}`);
+      
+      if (_target) saveSvgAsPng(_target, (_title && _title.hasAttribute("aria-label") ?
+        _title.getAttribute("aria-label") : "screenshot") + ".png");
     } catch (e) {
       FN.warn("SCREENSHOT ERROR", e);
     }
@@ -394,7 +412,6 @@ var ACTIONS = {
         FN.log("SHOW", "Slides Presenting");
         var _nav = document.getElementsByClassName(SELECTORS.nav);
         if (_nav.length >= 1) {
-          
           var _buttons = _nav[0].getElementsByClassName(SELECTORS.button), _last;
           Array.prototype.forEach.call(_buttons, el => {
             if (el.getElementsByClassName(SELECTORS.captioned_button).length > 0) _last = el;
@@ -403,10 +420,16 @@ var ACTIONS = {
           if (_last) Object.keys(BUTTONS).forEach(key => {
               var _button = BUTTONS[key];
               _last = _last.insertAdjacentElement("afterend",
-              	_button.button = CREATE.button(_button.desc, _button.name, 
+              	_button.button = CREATE.button(_button.desc, _button.name,
                             _button.icon || ICONS[key], _button.action || ACTIONS[key]));
             		_button.button.dataset.name = key;
             });
+          
+          Mousetrap.bind("h", () => ACTIONS.highlight(BUTTONS.highlight.button));
+          Mousetrap.bind("shift+h", () => ACTIONS.reset());
+          Mousetrap.bind("shift+c", () => ACTIONS.clear());
+          Mousetrap.bind("shift+s", () => ACTIONS.screenshot());
+          
         }
       } else {
         FN.log("SHOW", "Slides Open");

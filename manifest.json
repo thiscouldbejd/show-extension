@@ -5,14 +5,14 @@
 	"short_name" : "__MSG_extensionShortName__",
 	"description" : "__MSG_extensionDescription__",
   "default_locale" : "en",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
     "128": "icon128.png"
   },
   "permissions": [
-    "https://docs.google.com/presentation/*"
+    "https://docs.google.com/*"
   ],
   "content_scripts": [{
     "matches": [
@@ -22,6 +22,7 @@
     "js": [
       "rough.js",
       "saveSvgAsPng.js",
+      "mousetrap.js",
       "script.js"
     ]
   }],

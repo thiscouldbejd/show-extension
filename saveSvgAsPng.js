@@ -3,7 +3,8 @@
   if (typeof define !== 'undefined') define('save-svg-as-png', [], () => out$);
   out$.default = out$;
 
-  const xhtmlNs = 'http://www.w3.org/2000/xmlns/';
+  const xmlNs = 'http://www.w3.org/2000/xmlns/';
+  const xhtmlNs = 'http://www.w3.org/1999/xhtml';
   const svgNs = 'http://www.w3.org/2000/svg';
   const doctype = '<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [<!ENTITY nbsp "&#160;">]>';
   const urlRegex = /url\(["']?(.+?)["']?\)/;
@@ -140,6 +141,42 @@
     })
   );
 
+  const loadedFonts = () => new Promise((resolve, reject) => {
+        
+        var _fonts = [],
+            _replace = [];
+          for (var fontFace of document.fonts.values()) {
+              if (fontFace.family.indexOf("docs-") === 0) {
+                  var _name = fontFace.family.substring(5);
+                  if (_fonts.indexOf(_name) < 0) {
+                    _fonts.push(_name);
+                    _replace.push({value: _name, with: fontFace.family});
+                  }
+              }
+          }
+          var _url = "https://fonts.googleapis.com/css?family=" + _fonts.join("|").replace(/\s/g, "+");
+      
+        const req = new XMLHttpRequest();
+        req.addEventListener('load', () => {
+          var _text = req.response;
+          _replace.forEach(replace => {
+              _text = _text.replace(new RegExp(replace.value, "gi"), replace.with);
+          });
+          resolve(_text);
+        });
+        req.addEventListener('error', e => {
+          console.warn(`Failed to load fonts from: ${_url}`, e);
+          resolve(null);
+        });
+        req.addEventListener('abort', e => {
+          console.warn(`Aborted loading fonts from: ${_url}`, e);
+          resolve(null);
+        });
+        req.open('GET', _url);
+        req.responseType = 'text';
+        req.send();
+      });
+      
   const cachedFonts = {};
   const inlineFonts = fonts => Promise.all(
     fonts.map(font =>
@@ -184,34 +221,61 @@
   };
 
   const inlineCss = (el, options) => {
-    const {
-      selectorRemap,
-      modifyStyle,
-      modifyCss,
-      fonts
-    } = options || {};
-    const generateCss = modifyCss || ((selector, properties) => {
-      const sel = selectorRemap ? selectorRemap(selector) : selector;
-      const props = modifyStyle ? modifyStyle(properties) : properties;
-      return `${sel}{${props}}\n`;
-    });
+    
     const css = [];
-    const detectFonts = typeof fonts === 'undefined';
-    const fontList = fonts || [];
-    styleSheetRules().forEach(({rules, href}) => {
-      if (!rules) return;
-      Array.from(rules).forEach(rule => {
-        if (typeof rule.style != 'undefined') {
-          if (query(el, rule.selectorText)) css.push(generateCss(rule.selectorText, rule.style.cssText));
-          else if (detectFonts && rule.cssText.match(/^@font-face/)) {
-            const font = detectCssFont(rule, href);
-            if (font) fontList.push(font);
-          } else css.push(rule.cssText);
-        }
+    var _inline = () =>
+      new Promise((resolve, reject) => {
+          const {
+              selectorRemap,
+              modifyStyle,
+              modifyCss,
+              fonts
+            } = options || {};
+            const generateCss = modifyCss || ((selector, properties) => {
+              const sel = selectorRemap ? selectorRemap(selector) : selector;
+              const props = modifyStyle ? modifyStyle(properties) : properties;
+              return `${sel}{${props}}\n`;
+            });
+            const detectFonts = typeof fonts === 'undefined';
+            const fontList = fonts || [];
+            styleSheetRules().forEach(({rules, href}) => {
+              if (!rules) return;
+              Array.from(rules).forEach(rule => {
+                if (typeof rule.style != 'undefined') {
+                  if (query(el, rule.selectorText)) css.push(generateCss(rule.selectorText, rule.style.cssText));
+                  else if (detectFonts && rule.cssText.match(/^@font-face/)) {
+                    const font = detectCssFont(rule, href);
+                    if (font) {
+                        console.log("FONT", font);
+                        fontList.push(font);
+                    }
+                  } else css.push(rule.cssText);
+                }
+              });
+            });
+            resolve(fontList);
       });
-    });
+    
+    
 
-    return inlineFonts(fontList).then(fontCss => css.join('\n') + fontCss);
+    return loadedFonts()
+        .then(sheet => {
+            var head = document.getElementsByTagName('head')[0];
+            var s = document.createElement('style');
+            s.setAttribute('type', 'text/css');
+            s.appendChild(document.createTextNode(sheet));
+            head.appendChild(s);
+        })
+        .then(_inline)
+        .then(fonts => inlineFonts(fonts))
+        .then(fontCss => css.join('\n') + fontCss);
+        //return inlineFonts(fontList).then(fontCss => css.join('\n') + fontCss);
+  };
+
+  const downloadOptions = () => {
+    if (!navigator.msSaveOrOpenBlob && !('download' in document.createElement('a'))) {
+      return {popup: window.open()};
+    }
   };
 
   out$.prepareSvg = (el, options, done) => {
@@ -246,8 +310,8 @@
 
       clone.setAttribute('version', '1.1');
       clone.setAttribute('viewBox', [left, top, width, height].join(' '));
-      if (!clone.getAttribute('xmlns')) clone.setAttributeNS(xhtmlNs, 'xmlns', svgNs);
-      if (!clone.getAttribute('xmlns:xlink')) clone.setAttributeNS(xhtmlNs, 'xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      if (!clone.getAttribute('xmlns')) clone.setAttributeNS(xmlNs, 'xmlns', svgNs);
+      if (!clone.getAttribute('xmlns:xlink')) clone.setAttributeNS(xmlNs, 'xmlns:xlink', 'http://www.w3.org/1999/xlink');
 
       if (responsive) {
         clone.removeAttribute('width');
@@ -259,12 +323,9 @@
       }
 
       Array.from(clone.querySelectorAll('foreignObject > *')).forEach(foreignObject => {
-        if (foreignObject.tagName === 'svg')
-          foreignObject.setAttributeNS(xhtmlNs, 'xmlns', svgNs);
-        else if (!foreignObject.getAttribute('xmlns'))
-          foreignObject.setAttributeNS(xhtmlNs, 'xmlns', xhtmlNs);
+        foreignObject.setAttributeNS(xmlNs, 'xmlns', foreignObject.tagName === 'svg' ? svgNs : xhtmlNs);
       });
-
+      
       return inlineCss(el, options).then(css => {
         const style = document.createElement('style');
         style.setAttribute('type', 'text/css');
@@ -305,18 +366,32 @@
     } = options || {};
 
     const convertToPng = ({src, width, height}) => {
+      
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
       const pixelRatio = window.devicePixelRatio || 1;
+      const max = 4000; // Canvas Max = 32767
 
-      canvas.width = width * pixelRatio;
-      canvas.height = height * pixelRatio;
+      var c_width = width, c_height = height;
+      if (c_width > max || c_height > max) {
+        if (c_width > c_height) {
+          c_height = c_height / (c_width / max);
+          c_width = max;
+        } else {
+          c_width = c_width / (c_height / max);
+          c_height = max;
+        }
+      }
+      
+      canvas.width = c_width * pixelRatio;
+      canvas.height = c_height * pixelRatio;
       canvas.style.width = `${canvas.width}px`;
       canvas.style.height = `${canvas.height}px`;
+      
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
 
       if (canvg) canvg(canvas, src);
-      else context.drawImage(src, 0, 0);
+      else context.drawImage(src, 0, 0, width, height, 0, 0, c_width, c_height);
 
       let png;
       try {
@@ -348,7 +423,7 @@
     });
   };
 
-  out$.download = (name, uri) => {
+  out$.download = (name, uri, options) => {
     if (navigator.msSaveOrOpenBlob) navigator.msSaveOrOpenBlob(uriToBlob(uri), name);
     else {
       const saveLink = document.createElement('a');
@@ -368,21 +443,24 @@
         }
         saveLink.click();
         document.body.removeChild(saveLink);
-      } else {
-        window.open(uri, '_temp', 'menubar=no,toolbar=no,status=no');
+      } else if (options && options.popup) {
+        options.popup.document.title = name;
+        options.popup.location.replace(uri);
       }
     }
   };
 
   out$.saveSvg = (el, name, options) => {
+    const downloadOpts = downloadOptions(); // don't inline, can't be async
     return requireDomNodePromise(el)
       .then(el => out$.svgAsDataUri(el, options || {}))
-      .then(uri => out$.download(name, uri));
+      .then(uri => out$.download(name, uri, downloadOpts));
   };
 
   out$.saveSvgAsPng = (el, name, options) => {
+    const downloadOpts = downloadOptions(); // don't inline, can't be async
     return requireDomNodePromise(el)
       .then(el => out$.svgAsPngUri(el, options || {}))
-      .then(uri => out$.download(name, uri));
+      .then(uri => out$.download(name, uri, downloadOpts));
   };
 })();
