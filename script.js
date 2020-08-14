@@ -17,7 +17,8 @@ const ELEMENTS = {
 
 /* === Selection Constants === */
 const SELECTORS = {
-  nav : "punch-viewer-nav-v2",
+  nav : "punch-viewer-nav",
+  nav_v2 : "punch-viewer-nav-v2",
   block : "goog-inline-block",
   button : "goog-flat-button",
   hover_button : "goog-flat-button-hover",
@@ -411,6 +412,7 @@ var ACTIONS = {
       if (FN.isPresenting(_url)) {
         FN.log("SHOW", "Slides Presenting");
         var _nav = document.getElementsByClassName(SELECTORS.nav);
+        if (_nav.length === 0) _nav = document.getElementsByClassName(SELECTORS.nav_v2);
         if (_nav.length >= 1) {
           var _buttons = _nav[0].getElementsByClassName(SELECTORS.button), _last;
           Array.prototype.forEach.call(_buttons, el => {
